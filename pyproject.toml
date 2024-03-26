@@ -1,0 +1,67 @@
+[build-system]
+requires = [
+  "setuptools>=69"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "device-tracker"
+version = "0.0.1"
+description = "Tracking system prototype."
+readme = "README.md"
+requires-python = ">=3.11"
+
+authors = [
+  { name = "Alexander Saites", email = "alexander@saites.dev" },
+]
+
+classifiers = [
+  "Programming Language :: Python :: 3",
+]
+
+dependencies = [
+  "pydantic>=2.6.4,<3.0.0",
+  "SQLAlchemy>=2.0.29,<2.1.0",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.1.1,<9.0.0"
+]
+
+dev = [
+  "mypy>=1.9.0",
+  "black>=24.3.0",
+  "isort>=5.13.2",
+]
+
+[tool.pytest.ini_options]
+addopts = [
+  "--import-mode=importlib",
+  "--maxfail=1",
+  # Report (f)ailed, (E)rrors, and (s)kipped.
+  "--rfEs",
+]
+python_files = "test_*.py"
+
+[tool.mypy]
+mypy_path = "./src/"
+strict = true
+plugins = [
+  "pydantic.mypy"
+]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+warn_untyped_fields = true
+
+[tool.black]
+target-version = ['py311']
+line-length = 95
+
+[tool.isort]
+profile = "black"
+line_length = 95
+

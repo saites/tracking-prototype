@@ -1,24 +1,12 @@
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional, Self, TypeAlias, TypeVar
+from typing import Any, Optional, Self, TypeVar
 
 import sqlalchemy
-from sqlalchemy import (
-    CheckConstraint,
-    ForeignKey,
-    Identity,
-    Index,
-    Integer,
-    MetaData,
-    Text,
-    UniqueConstraint,
-    case,
-    select,
-)
+from sqlalchemy import CheckConstraint, ForeignKey, Index, case, select
 from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
 from sqlalchemy.orm import (
-    DeclarativeBase,
     Mapped,
     MappedAsDataclass,
     Session,

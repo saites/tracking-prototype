@@ -1,0 +1,172 @@
+# This file shows example commands recognized by the driver script.
+# Lines are executed in order, and lines starting with '#' are ignored.
+# Words/arguments are whitespace delimited and consecutive spaces are ignored.
+#
+# If a command generates an error (or the command is unknown),
+# the processing script will show an error with details of the issue,
+# but the script will continue to process the lines that follow.
+#
+# The general syntax for commands are '{COMMAND} {TARGET KIND} {TARGET NAME} [ARGUMENTS]'.
+# A {PLACE} is either DWELLING or HUB. A {DEVICE} is one of SWITCH, DIMMER, LOCK, or THERMOSTAT.
+# An {ITEM} is one of the {PLACE}s or {DEVICE}s or the literal word DEVICE to match all devices.
+#
+#   Create/delete items (see below for device-specific properties):
+#     NEW {PLACE} place_name
+#     NEW {DEVICE} device_name [PROPS]
+#     DELETE {PLACE | DEVICE} item_name
+#
+#   Associate items together:
+#     INSTALL hub_name INTO building_name
+#     PAIR {DEVICE} device_name WITH hub_name
+#
+#   Change properties and device states:
+#     RENAME {PLACE | DEVICE} current_name new_name
+#     SET DWELLING dwelling_name { OCCUPIED | VACANT }
+#     SET {DEVICE} device_name [STATE]
+#     MODIFY {DEVICE} device_name [PROPS]
+#
+#   Show information about items:
+#     LIST {ITEM}S
+#     DETAIL {ITEM}S
+#     SHOW {ITEM} item_name
+#
+#   Switches have on/off states:
+#     NEW SWITCH name
+#     SET SWITCH name TO {ON | OFF}
+#  
+#   Dimmers have integer values in a range scaled by a factor:
+#     NEW DIMMER name RANGE low TO high WITH FACTOR factor
+#     MODIFY DIMMER name RANGE low TO high WITH FACTOR factor
+#     SET DIMMER name TO value
+#  
+#   Locks have locked/unlocked states and associated PINs of 4 or more digits:
+#     NEW LOCK name WITH PIN pin_code
+#     MODIFY LOCK name ADD PIN pin_code
+#     MODIFY LOCK name REMOVE PIN pin_code
+#     SET LOCK name TO LOCKED 
+#     SET LOCK name TO UNLOCKED USING pin_code
+#  
+#   Thermostats have operating states, a display format (C or F), 
+#   and low/high set-points (always integers in 1/100th of a degree Celcius):
+#     NEW THERMOSTAT name WITH DISPLAY IN { C | F }
+#     MODIFY THERMOSTAT name WITH DISPLAY IN { C | F }
+#     SET THERMOSTAT name TEMPERATURE TO low_temp TO high_temp
+#     SET THERMOSTAT name TO {OFF | HEAT | COOL | HEATCOOL}
+#
+
+
+
+# Start by creating some places and devices.
+NEW DWELLING dwelling
+NEW HUB hub
+NEW SWITCH switch
+NEW DIMMER dimmer RANGE 0 TO 100 WITH FACTOR 100
+NEW LOCK lock WITH PIN 12345
+NEW THERMOSTAT therm WITH DISPLAY IN C 
+
+# Pair items together.
+INSTALL hub INTO dwelling
+PAIR DIMMER dimmer WITH hub
+PAIR SWITCH switch WITH hub
+PAIR LOCK lock WITH hub
+PAIR THERMOSTAT therm WITH hub
+
+# Show everything by seeing details of Dwellings.
+DETAIL DWELLINGS
+
+# Renaming doesn't effect relationships.
+RENAME DWELLING dwelling TO my_dwelling
+DETAIL DWELLINGS
+RENAME DWELLING my_dwelling TO dwelling
+
+
+# Dwellings can be occupied or unoccupied.
+SHOW DWELLING dwelling
+SET DWELLING dwelling TO OCCUPIED
+SHOW DWELLING dwelling
+SET DWELLING dwelling TO VACANT 
+SHOW DWELLING dwelling
+
+
+# Toggle a switch on and off.
+SHOW SWITCH switch
+SET SWITCH switch TO ON
+SHOW SWITCH switch
+SET SWITCH switch TO OFF
+SHOW SWITCH switch
+
+
+# Dimmer can be set to a value in their range. 
+SHOW DIMMER dimmer
+SET DIMMER dimmer TO 50
+SHOW DIMMER dimmer
+SET DIMMER dimmer TO 100
+SHOW DIMMER dimmer
+MODIFY DIMMER dimmer RANGE 0 TO 255 WITH FACTOR 255
+SHOW DIMMER dimmer
+SET DIMMER dimmer TO 50
+SHOW DIMMER dimmer
+SET DIMMER dimmer TO 100
+SHOW DIMMER dimmer
+
+
+
+# You can change a thermostat's mode and set-points and configure its display
+# but temperatures are still specified as 1/100th of a degree C.
+SHOW THERMOSTAT therm
+SET THERMOSTAT therm TO COOL
+SHOW THERMOSTAT therm
+SET THERMOSTAT therm TO OFF 
+SHOW THERMOSTAT therm
+SET THERMOSTAT therm TO HEAT
+SHOW THERMOSTAT therm
+SET THERMOSTAT therm TO HEATCOOL
+SHOW THERMOSTAT therm
+MODIFY THERMOSTAT therm WITH DISPLAY IN F
+SHOW THERMOSTAT therm
+SET THERMOSTAT therm TARGET TO 2100 TO 2200
+SET THERMOSTAT therm CURRENT TO 2000 
+SHOW THERMOSTAT therm
+SET THERMOSTAT therm CURRENT TO 2300
+SHOW THERMOSTAT therm
+SET THERMOSTAT therm TARGET TO 2000 TO 2300
+SHOW THERMOSTAT therm
+
+
+
+# Once locked, a lock needs a valid PIN to unlock.
+SHOW LOCK lock
+SET LOCK lock TO LOCKED
+SHOW LOCK lock
+SET LOCK lock TO UNLOCKED USING 12345 
+SHOW LOCK lock
+SET LOCK lock TO LOCKED
+MODIFY LOCK lock ADD PIN 4321
+MODIFY LOCK lock REMOVE PIN 12345
+SHOW LOCK lock
+SET LOCK lock TO UNLOCKED USING 4321
+SHOW LOCK lock
+
+# To delete devices, first unpair them.
+LIST DEVICES
+UNPAIR SWITCH switch 
+UNPAIR DIMMER dimmer 
+UNPAIR THERMOSTAT therm 
+UNPAIR LOCK lock
+DELETE SWITCH switch 
+DELETE DIMMER dimmer 
+DELETE THERMOSTAT therm 
+DELETE LOCK lock
+LIST DEVICES
+
+# To delete a Hub, first uninstall it.
+LIST HUBS
+UNINSTALL hub
+DELETE HUB hub
+LIST HUBS
+
+# A Dwelling can be deleted if it has no Hubs.
+LIST DWELLINGS
+DELETE DWELLING dwelling
+DETAIL DWELLINGS
+

@@ -26,11 +26,12 @@ def main(command_file: typing.TextIO, output_file: typing.TextIO) -> None:
     with Session(engine) as session:
         for line_num, line in enumerate(command_file):
             line = line.strip()
+
             session.begin()
             try:
                 process_command(session, line, output_file)
                 session.commit()
-            except errors.TrackerError as err:
+            except (errors.TrackerError, ValueError) as err:
                 logger.error(f"Command on line {line_num} failed: {err}\n\t> {line}\n")
                 session.rollback()
 

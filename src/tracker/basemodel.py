@@ -1,8 +1,8 @@
 import re
 import uuid
-from pathlib import Path
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Annotated, Iterable, Optional, Self
 
 from sqlalchemy import (
@@ -56,9 +56,11 @@ class BaseModel(MappedAsDataclass, DeclarativeBase):
         """Use snake_case names for tables."""
         return "_".join(p.lower() for p in _split_camel(cls.__name__))
 
+
 class AutoID(MappedAsDataclass):
-    """Mixin to add a primary key column named 'id'.""" 
-    id: Mapped[DbID] = mapped_column( Identity(always=True), primary_key=True, init=False)
+    """Mixin to add a primary key column named 'id'."""
+
+    id: Mapped[DbID] = mapped_column(Identity(always=True), primary_key=True, init=False)
 
 
 def get_sqlite_engine(db_name: str | None = None) -> Engine:
@@ -80,14 +82,14 @@ def get_sqlite_engine(db_name: str | None = None) -> Engine:
     # - enable foreign key support
     # See: https://docs.sqlalchemy.org/en/20/dialects/sqlite.html#pysqlite-serializable
     @event.listens_for(Engine, "connect")
-    def on_connect(dbapi_connection, connection_record): # type: ignore 
+    def on_connect(dbapi_connection, connection_record):  # type: ignore
         dbapi_connection.isolation_level = None
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
     @event.listens_for(Engine, "begin")
-    def on_begin(conn): # type: ignore 
+    def on_begin(conn):  # type: ignore
         conn.exec_driver_sql("BEGIN")
 
     metadata.create_all(db_engine)

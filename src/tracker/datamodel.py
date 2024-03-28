@@ -1,10 +1,21 @@
+import re
 from datetime import datetime
 from enum import Enum
-import re
 from typing import Any, Optional, Self, TypeAlias, TypeVar
 
-from sqlalchemy import case, CheckConstraint, ForeignKey, Identity, Index, Integer, MetaData, Text, UniqueConstraint, select
 import sqlalchemy
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    Identity,
+    Index,
+    Integer,
+    MetaData,
+    Text,
+    UniqueConstraint,
+    case,
+    select,
+)
 from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -18,43 +29,50 @@ from sqlalchemy.orm import (
 )
 
 from . import errors
-from .basemodel import AutoID, DbID, BaseModel, VersionStr, CentiCelcius
+from .basemodel import AutoID, BaseModel, CentiCelcius, DbID, VersionStr
 
 
 class DeviceKind(Enum):
     """Device kinds; used as discriminator in common-properties table."""
+
     Unknown = "unknown"
     Switch = "switch"
     Dimmer = "dimmer"
     Lock = "lock"
     Thermostat = "thermostat"
 
+
 class OccupancyState(Enum):
     """States of a Dwelling's occupancy."""
+
     Vacant = "vacant"
     Occupied = "occupied"
 
 
 class SwitchState(Enum):
     """States for a switch."""
+
     On = "on"
     Off = "off"
 
 
 class LockState(Enum):
     """States of a door lock."""
+
     Locked = "locked"
     Unlocked = "unlocked"
 
 
 class ThermoDisplay(Enum):
     """Thermostat diplay format."""
+
     Celcius = "c"
     Fahrenheit = "f"
 
 
 class ThermoMode(Enum):
     """Thermostat modes: whether to heat, cool, both, or neither."""
+
     Off = "off"
     Heat = "heat"
     Cool = "cool"
@@ -63,6 +81,7 @@ class ThermoMode(Enum):
 
 class ThermoOperation(Enum):
     """Heating/Cooling command sent by a Thermostat to the heat pump it controls."""
+
     Off = "off"
     Heating = "heating"
     Cooling = "cooling"
@@ -73,7 +92,9 @@ class Hardware(MappedAsDataclass):
 
     hardware_version: Mapped[VersionStr] = mapped_column(default="0.0.0", kw_only=True)
     firmware_version: Mapped[VersionStr] = mapped_column(default="0.0.0", kw_only=True)
-    firmware_updated: Mapped[datetime] = mapped_column(default_factory=datetime.now, kw_only=True)
+    firmware_updated: Mapped[datetime] = mapped_column(
+        default_factory=datetime.now, kw_only=True
+    )
     created_at: Mapped[datetime] = mapped_column(default_factory=datetime.now, kw_only=True)
     updated_at: Mapped[datetime] = mapped_column(default_factory=datetime.now, kw_only=True)
 
@@ -84,14 +105,19 @@ class Hub(AutoID, Hardware, BaseModel):
     name: Mapped[str] = mapped_column(unique=True, index=True)
 
     # A Hub is associated with a Dwelling.
-    dwelling_id: Mapped[DbID | None] = mapped_column(ForeignKey("dwelling.id"), nullable=True, init=False)
+    dwelling_id: Mapped[DbID | None] = mapped_column(
+        ForeignKey("dwelling.id"), nullable=True, init=False
+    )
     dwelling: Mapped[Optional["Dwelling"]] = relationship(
         lambda: Dwelling, back_populates="hubs", default=None
     )
 
     # Devices are associated with a Hub.
     devices: Mapped[list["Device"]] = relationship(
-        lambda: Device, default_factory=list, back_populates="hub", order_by=lambda: Device.created_at.desc()
+        lambda: Device,
+        default_factory=list,
+        back_populates="hub",
+        order_by=lambda: Device.created_at.desc(),
     )
 
 
@@ -100,7 +126,9 @@ class Device(AutoID, Hardware, BaseModel):
 
     kind: Mapped[DeviceKind] = mapped_column(init=False)
     name: Mapped[str] = mapped_column()
-    hub_id: Mapped[DbID | None] = mapped_column(ForeignKey("hub.id"), nullable=True, init=False)
+    hub_id: Mapped[DbID | None] = mapped_column(
+        ForeignKey("hub.id"), nullable=True, init=False
+    )
     hub: Mapped[Hub | None] = relationship(Hub, back_populates="devices", default=None)
 
     __mapper_args__ = {
@@ -108,9 +136,7 @@ class Device(AutoID, Hardware, BaseModel):
         "polymorphic_on": "kind",
     }
 
-    __table_args__ = (
-        Index("ix_kind_name", kind, name, unique=True),
-    )
+    __table_args__ = (Index("ix_kind_name", kind, name, unique=True),)
 
 
 class Dwelling(AutoID, BaseModel):
@@ -119,7 +145,9 @@ class Dwelling(AutoID, BaseModel):
     name: Mapped[str] = mapped_column(unique=True, index=True)
     occupancy: Mapped[OccupancyState] = mapped_column(default=OccupancyState.Vacant)
     hubs: Mapped[list[Hub]] = relationship(default_factory=list, back_populates="dwelling")
-    devices: Mapped[list[Device]] = relationship(default_factory=list, secondary="hub", viewonly=True)
+    devices: Mapped[list[Device]] = relationship(
+        default_factory=list, secondary="hub", viewonly=True
+    )
 
 
 class DeviceHardware(MappedAsDataclass):
@@ -132,7 +160,7 @@ class DeviceHardware(MappedAsDataclass):
     @declared_attr.directive
     def __mapper_args__(cls: Self) -> dict[str, Any]:
         try:
-            return { "polymorphic_identity": DeviceKind(cls.__name__.lower()) }
+            return {"polymorphic_identity": DeviceKind(cls.__name__.lower())}
         except ValueError:
             raise TypeError(f"Device {cls.__name__.lower()} is not a declared DeviceKind")
 
@@ -150,9 +178,9 @@ class Dimmer(DeviceHardware, Device):
     min_value: Mapped[int] = mapped_column(default=0)
     max_value: Mapped[int] = mapped_column(default=100)
     scale: Mapped[int] = mapped_column(default=1)
-    
+
     display_value: Mapped[float] = column_property(value / scale)
-    
+
 
 Dimmer.__table__.append_constraint(
     CheckConstraint("min_value <= max_value", name="range_is_valid"),
@@ -169,21 +197,31 @@ class Lock(DeviceHardware, Device):
     state: Mapped[LockState] = mapped_column(default=LockState.Unlocked)
 
     # lock_pins tells the ORM the direct relationship between Lock and LockPin,
-    # but pin_codes gives a more Pythonic interface to the underlying code. 
+    # but pin_codes gives a more Pythonic interface to the underlying code.
     lock_pins: Mapped[list["LockPin"]] = relationship(
-                lambda: LockPin, default_factory=list, back_populates="lock",
-                cascade="all, delete-orphan", passive_deletes=True)
-    pin_codes: AssociationProxy[list[str]] = association_proxy("lock_pins", "pin", default_factory=list)
+        lambda: LockPin,
+        default_factory=list,
+        back_populates="lock",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    pin_codes: AssociationProxy[list[str]] = association_proxy(
+        "lock_pins", "pin", default_factory=list
+    )
 
 
 class LockPin(BaseModel):
     """A PIN that can be used to unlock a door."""
 
-    lock_id: Mapped[DbID] = mapped_column(ForeignKey("lock.id", ondelete="CASCADE"), init=False, primary_key=True)
+    lock_id: Mapped[DbID] = mapped_column(
+        ForeignKey("lock.id", ondelete="CASCADE"), init=False, primary_key=True
+    )
     pin: Mapped[str] = mapped_column(primary_key=True)
     lock: Mapped[Lock] = relationship(Lock, back_populates="lock_pins", init=False)
 
-    __table_args__ = (CheckConstraint("pin REGEXP '^[0-9]{4,}$'", name="pin_is_four_or_more_digits"),)
+    __table_args__ = (
+        CheckConstraint("pin REGEXP '^[0-9]{4,}$'", name="pin_is_four_or_more_digits"),
+    )
 
 
 class Thermostat(DeviceHardware, Device):
@@ -200,7 +238,7 @@ class Thermostat(DeviceHardware, Device):
     display_low: Mapped[float] = column_property(
         case(
             (display == ThermoDisplay.Celcius.name, low_centi_c / 100.0),
-            else_=(9 * low_centi_c / 500.0 + 32.0), # C to F: (temp/100.0) * (9/5) + 32.0
+            else_=(9 * low_centi_c / 500.0 + 32.0),  # C to F: (temp/100.0) * (9/5) + 32.0
         )
     )
     display_high: Mapped[float] = column_property(
@@ -212,7 +250,7 @@ class Thermostat(DeviceHardware, Device):
     display_current: Mapped[float] = column_property(
         case(
             (display == ThermoDisplay.Celcius.name, current_centi_c / 100.0),
-            else_=(9 * current_centi_c / 500.0 + 32.0),  
+            else_=(9 * current_centi_c / 500.0 + 32.0),
         )
     )
 
@@ -225,6 +263,7 @@ Thermostat.__table__.append_constraint(
 DeviceT = TypeVar("DeviceT", Switch, Dimmer, Lock, Thermostat, Device)
 _T = TypeVar("_T", Dwelling, Hub, Switch, Dimmer, Lock, Thermostat, Device)
 
+
 def get_by_name(session: Session, kind: type[_T], name: str, operation: str) -> _T:
     """Find an item by name."""
 
@@ -232,6 +271,7 @@ def get_by_name(session: Session, kind: type[_T], name: str, operation: str) -> 
         return session.scalars(select(kind).where(kind.name == name)).one()
     except sqlalchemy.exc.NoResultFound:
         raise errors.NoResultError(kind.__tablename__, name, operation)
+
 
 def rename(session: Session, kind: type[_T], old_name: str, new_name: str) -> None:
     """Rename an item."""
@@ -243,13 +283,13 @@ def delete(session: Session, kind: type[_T], name: str) -> None:
     """Delete an item."""
 
     match get_by_name(session, kind, name, "delete"):
-        case (Device() as d) if d.hub is not None:
+        case Device() as d if d.hub is not None:
             raise errors.PairedError(d.kind.name, name, "Hub", d.hub.name, "delete")
-        case (Hub() as h) if h.dwelling is not None:
+        case Hub() as h if h.dwelling is not None:
             raise errors.PairedError("Hub", name, "Dwelling", h.dwelling.name, "delete")
-        case (Hub() as h) if any(h.devices):
+        case Hub() as h if any(h.devices):
             raise errors.HasDependenciesError("Hub", name, "delete")
-        case (Dwelling() as d) if any(d.hubs):
+        case Dwelling() as d if any(d.hubs):
             raise errors.HasDependenciesError("Dwelling", name, "delete")
         case other:
             session.delete(other)
@@ -275,7 +315,7 @@ def uninstall_hub(session: Session, hub_name: str) -> None:
     if hub.dwelling is None:
         raise errors.UnpairedError("Hub", hub.name, "Dwelling", "uninstall hub")
 
-    hub.dwelling = None 
+    hub.dwelling = None
 
 
 def pair_device(session: Session, kind: type[_T], device_name: str, hub_name: str) -> None:
@@ -285,7 +325,9 @@ def pair_device(session: Session, kind: type[_T], device_name: str, hub_name: st
     hub = get_by_name(session, Hub, hub_name, "pair device")
 
     if device.hub is not None and device.hub_id != hub.id:
-        raise errors.PairedError(device.kind.name, device.name, "Hub", device.hub.name, "pair device")
+        raise errors.PairedError(
+            device.kind.name, device.name, "Hub", device.hub.name, "pair device"
+        )
 
     device.hub = hub
 
@@ -298,43 +340,49 @@ def unpair_device(session: Session, kind: type[_T], device_name: str) -> None:
     if device.hub is None:
         raise errors.UnpairedError(device.kind.name, device.name, "Hub", "unpair device")
 
-    device.hub = None 
+    device.hub = None
 
 
 def delete_device(session: Session, device: Device) -> None:
     """Delete a `Device`."""
 
     if device.hub is not None:
-        raise errors.PairedError(device.kind.name, device.name, "Hub", device.hub.name, "delete device")
+        raise errors.PairedError(
+            device.kind.name, device.name, "Hub", device.hub.name, "delete device"
+        )
 
     session.delete(device)
 
 
 def new_dwelling(session: Session, name: str) -> None:
     """Create a new `Dwelling`."""
-    
+
     session.add(Dwelling(name))
 
 
 def new_hub(session: Session, name: str) -> None:
     """Create a new `Hub`."""
-    
+
     session.add(Hub(name))
 
 
 def new_switch(session: Session, name: str) -> None:
     """Create a new `Switch`."""
-    
+
     session.add(Switch(name))
 
 
-def new_dimmer(session: Session, name: str, min_value: int, max_value: int, scale: int) -> None:
+def new_dimmer(
+    session: Session, name: str, min_value: int, max_value: int, scale: int
+) -> None:
     """Create a new `Dimmer`."""
 
     if not (min_value <= max_value and scale != 0):
         raise errors.TrackerError("need low <= high and scale != 0")
 
-    session.add(Dimmer(name, min_value=min_value, max_value=max_value, scale=scale, value=min_value))
+    session.add(
+        Dimmer(name, min_value=min_value, max_value=max_value, scale=scale, value=min_value)
+    )
 
 
 def new_lock(session: Session, name: str, pin: str) -> None:
@@ -352,7 +400,9 @@ def new_thermostat(session: Session, name: str, display: ThermoDisplay) -> None:
     session.add(Thermostat(name, display=display))
 
 
-def update_dimmer(session: Session, name: str, min_value: int, max_value: int, scale: int) -> None:
+def update_dimmer(
+    session: Session, name: str, min_value: int, max_value: int, scale: int
+) -> None:
     """Change the range or scale of an existing `Dimmer`."""
 
     dimmer = get_by_name(session, Dimmer, name, "update range")
@@ -386,7 +436,9 @@ def set_dimmer_value(session: Session, name: str, value: int) -> None:
 
     dimmer = get_by_name(session, Dimmer, name, "set")
     if not (dimmer.min_value <= value <= dimmer.max_value):
-        raise errors.OutOfRangeError("Dimmer", name, value, dimmer.min_value, dimmer.max_value, "set")
+        raise errors.OutOfRangeError(
+            "Dimmer", name, value, dimmer.min_value, dimmer.max_value, "set"
+        )
 
     dimmer.value = value
 
@@ -396,10 +448,16 @@ def _change_thermo_state(thermo: Thermostat) -> None:
     if thermo.mode is ThermoMode.Off:
         return
 
-    # TODO: hysteresis 
-    if thermo.current_centi_c > thermo.high_centi_c and thermo.mode in (ThermoMode.Cool, ThermoMode.HeatCool):
+    # TODO: hysteresis
+    if thermo.current_centi_c > thermo.high_centi_c and thermo.mode in (
+        ThermoMode.Cool,
+        ThermoMode.HeatCool,
+    ):
         thermo.state = ThermoOperation.Cooling
-    elif thermo.current_centi_c < thermo.low_centi_c and thermo.mode in (ThermoMode.Heat, ThermoMode.HeatCool):
+    elif thermo.current_centi_c < thermo.low_centi_c and thermo.mode in (
+        ThermoMode.Heat,
+        ThermoMode.HeatCool,
+    ):
         thermo.state = ThermoOperation.Heating
     else:
         thermo.state = ThermoOperation.Off
@@ -424,9 +482,11 @@ def set_thermo_current_temp(session: Session, name: str, value: CentiCelcius) ->
     _change_thermo_state(thermo)
 
 
-def set_thermo_set_points(session: Session, name: str, low: CentiCelcius, high: CentiCelcius) -> None:
+def set_thermo_set_points(
+    session: Session, name: str, low: CentiCelcius, high: CentiCelcius
+) -> None:
     """Set a `Thermostat`'s low and high set points."""
-    
+
     if not (low <= high):
         raise errors.TrackerError("need low <= high")
 
@@ -454,10 +514,10 @@ def unlock_door(session: Session, name: str, pin: str) -> None:
 
 def add_lock_pin(session: Session, name: str, pin: str) -> None:
     """Add a new `pin` to a `Lock`. Does nothing if it is already present."""
-    
+
     if not re.match(r"[0-9]{4,}", pin):
         raise errors.TrackerError("pin must be 4 or more digits (0-9 only)")
-    
+
     lock = get_by_name(session, Lock, name, "lock")
     if pin not in lock.pin_codes:
         lock.pin_codes.append(pin)
@@ -465,10 +525,9 @@ def add_lock_pin(session: Session, name: str, pin: str) -> None:
 
 def remove_lock_pin(session: Session, name: str, pin: str) -> None:
     """Remove a `pin` from a `Lock`."""
-    
+
     lock = get_by_name(session, Lock, name, "lock")
     if pin not in lock.pin_codes:
         raise errors.InvalidPinError()
 
     lock.pin_codes.remove(pin)
-

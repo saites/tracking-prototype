@@ -3,7 +3,7 @@ from __future__ import annotations
 import typing
 from datetime import datetime
 from enum import Enum
-from typing import Any, Protocol, Self
+from typing import Any, Protocol
 
 import sqlalchemy
 from sqlalchemy import CheckConstraint, ForeignKey, Identity, Index, Integer, case
@@ -13,7 +13,6 @@ from sqlalchemy.orm import (
     MappedAsDataclass,
     column_property,
     declared_attr,
-    has_inherited_table,
     mapped_column,
     relationship,
 )

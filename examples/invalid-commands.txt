@@ -1,0 +1,101 @@
+NEW
+NEW SWITCH
+NEW SWITCH switch
+SET switch
+SET switch ON
+SET switch OFF
+SET switch TO on
+SET switch TO off
+SET SWITCH TO ON OFF
+
+
+NEW LOCK lock WITH PIN 12345
+NEW DIMMER dimmer RANGE 0 TO 100 WITH FACTOR 100
+SET THERMOSTAT therm TEMPERATURE TO 2000 TO 2300
+
+
+NEW DIMMER invalid 
+NEW DIMMER invalid RANGE 0 TO 100 WITH FACTOR 0
+NEW DIMMER invalid RANGE 100 TO 0 WITH FACTOR 100
+
+NEW LOCK
+NEW LOCK invalid
+NEW LOCK invalid WITH PIN 123
+NEW LOCK invalid WITH PIN abc
+
+
+# Thermostat temperatures are always 1/100th of a degree C. The low <= high. 
+NEW THERMOSTAT 
+NEW THERMOSTAT invalid
+NEW THERMOSTAT invalid WITH SET POINTS 4000 TO -4000
+
+
+RENAME DWELLING missing TO invalid
+RENAME HUB missing TO invalid
+RENAME SWITCH missing TO invalid
+RENAME DIMMER missing TO invalid
+RENAME LOCK missing TO invalid
+RENAME THERMOSTAT missing TO invalid
+
+SET DWELLING missing VACANT
+
+
+# Dimmer can be set to a value in their range. 
+SHOW DIMMER dimmer
+SET DIMMER dimmer TO 50
+SHOW DIMMER dimmer
+SET DIMMER dimmer TO 100
+SHOW DIMMER dimmer
+SHOW DIMMER dimmer
+SET DIMMER dimmer TO 50
+SHOW DIMMER dimmer
+SET DIMMER dimmer TO 100
+SHOW DIMMER dimmer
+
+MODIFY DIMMER dimmer RANGE 255 TO -255 WITH FACTOR 255
+
+
+SET THERMOSTAT 
+SET THERMOSTAT therm 
+SET THERMOSTAT therm TO UNKNOWN
+SET THERMOSTAT therm TO HEAT UNKNOWN
+MODIFY THERMOSTAT 
+MODIFY THERMOSTAT therm 
+MODIFY THERMOSTAT therm DISPLAY 
+MODIFY THERMOSTAT therm DISPLAY IN K
+
+
+SET LOCK
+SET LOCK lock
+SET LOCK lock TO UNKNOWN
+SET LOCK lock TO UNLOCKED
+SET LOCK lock TO UNLOCKED USING 
+SET LOCK lock TO UNLOCKED USING invalid
+SET LOCK lock TO UNLOCKED USING 12345 
+MODIFY LOCK 
+MODIFY LOCK lock
+MODIFY LOCK lock ADD
+MODIFY LOCK lock ADD PIN
+MODIFY LOCK lock ADD PIN 1
+MODIFY LOCK lock ADD PIN 1 2
+MODIFY LOCK lock ADD PIN abcdef
+
+
+
+# You can't delete a device that's paired with a hub.
+LIST DEVICES
+DELETE SWITCH switch 
+DELETE DIMMER dimmer 
+DELETE THERMOSTAT therm 
+DELETE LOCK lock
+LIST DEVICES
+
+
+# Likewise, you can't delete a Hub that has devices nor a Dwelling that has Hubs.
+LIST HUBS
+LIST DWELLINGS 
+DELETE HUB hub
+DELETE DWELLING dwelling
+LIST HUBS
+LIST DWELLINGS 
+

@@ -1,14 +1,19 @@
+from __future__ import annotations
+
+import typing
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional, Self, TypeVar
+from typing import Any, Protocol, Self
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, case
+import sqlalchemy
+from sqlalchemy import CheckConstraint, ForeignKey, Identity, Index, Integer, case
 from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
 from sqlalchemy.orm import (
     Mapped,
     MappedAsDataclass,
     column_property,
     declared_attr,
+    has_inherited_table,
     mapped_column,
     relationship,
 )
@@ -71,6 +76,17 @@ class ThermoOperation(Enum):
     Cooling = "cooling"
 
 
+class Dwelling(AutoID, BaseModel):
+    """A living space where hubs and devices can be installed."""
+
+    name: Mapped[str] = mapped_column(unique=True, index=True)
+    occupancy: Mapped[OccupancyState] = mapped_column(default=OccupancyState.Vacant)
+    hubs: Mapped[list[Hub]] = relationship(default_factory=list, back_populates="dwelling")
+    devices: Mapped[list[Device]] = relationship(
+        default_factory=list, secondary="hub", viewonly=True
+    )
+
+
 class Hardware(MappedAsDataclass):
     """A mixin class that adds columns for common hardware properties."""
 
@@ -92,12 +108,12 @@ class Hub(AutoID, Hardware, BaseModel):
     dwelling_id: Mapped[DbID | None] = mapped_column(
         ForeignKey("dwelling.id"), nullable=True, init=False
     )
-    dwelling: Mapped[Optional["Dwelling"]] = relationship(
+    dwelling: Mapped[Dwelling | None] = relationship(
         lambda: Dwelling, back_populates="hubs", default=None
     )
 
     # Devices are associated with a Hub.
-    devices: Mapped[list["Device"]] = relationship(
+    devices: Mapped[list[Device]] = relationship(
         lambda: Device,
         default_factory=list,
         back_populates="hub",
@@ -105,57 +121,58 @@ class Hub(AutoID, Hardware, BaseModel):
     )
 
 
-class Device(AutoID, Hardware, BaseModel):
-    """A Device is an IoT entity which reports reading, has state, and/or can be controlled."""
+class NamedClass(Protocol):
+    """This is used to help the type-checker in the next mixin."""
 
-    kind: Mapped[DeviceKind] = mapped_column(init=False)
-    name: Mapped[str] = mapped_column()
-    hub_id: Mapped[DbID | None] = mapped_column(
-        ForeignKey("hub.id"), nullable=True, init=False
-    )
-    hub: Mapped[Hub | None] = relationship(Hub, back_populates="devices", default=None)
-
-    __mapper_args__ = {
-        "polymorphic_identity": DeviceKind.Unknown,
-        "polymorphic_on": "kind",
-    }
-
-    __table_args__ = (Index("ix_kind_name", kind, name, unique=True),)
+    @property
+    def __name__(self) -> str: ...
 
 
-class Dwelling(AutoID, BaseModel):
-    """A living space where hubs and devices can be installed."""
+class DeviceID:
+    """Generates ID column to relate tables with device-type-specific properties
+    to the "device" table, which holds properties common to all devices.
+    """
 
-    name: Mapped[str] = mapped_column(unique=True, index=True)
-    occupancy: Mapped[OccupancyState] = mapped_column(default=OccupancyState.Vacant)
-    hubs: Mapped[list[Hub]] = relationship(default_factory=list, back_populates="dwelling")
-    devices: Mapped[list[Device]] = relationship(
-        default_factory=list, secondary="hub", viewonly=True
-    )
+    @declared_attr.cascading  # type: ignore
+    def id(cls: NamedClass) -> Mapped[DbID]:
+        if cls.__name__ == "Device":
+            return mapped_column(Integer, Identity(always=True), primary_key=True, init=False)
+        else:
+            return mapped_column(Integer, ForeignKey("device.id"), primary_key=True, init=False)
 
-
-class DeviceHardware(MappedAsDataclass):
-    """Mixin used for subclasses of Device."""
-
-    @declared_attr
-    def id(cls: Self) -> Mapped[DbID]:
-        return mapped_column(ForeignKey("device.id"), primary_key=True, init=False)
 
     @declared_attr.directive
-    def __mapper_args__(cls: Self) -> dict[str, Any]:
+    def __mapper_args__(cls: NamedClass) -> dict[str, Any]:
+        if cls.__name__ == "Device":
+            return {
+                "polymorphic_identity": DeviceKind.Unknown,
+                "polymorphic_on": "kind",
+            }
+
         try:
             return {"polymorphic_identity": DeviceKind(cls.__name__.lower())}
         except ValueError:
             raise TypeError(f"Device {cls.__name__.lower()} is not a declared DeviceKind")
 
 
-class Switch(DeviceHardware, Device):
+class Device(DeviceID, Hardware, BaseModel):
+    """A Device is an IoT entity which reports reading, has state, and/or can be controlled."""
+    
+    kind: Mapped[DeviceKind] = mapped_column(init=False)
+    name: Mapped[str] = mapped_column()
+    hub_id: Mapped[DbID | None] = mapped_column(ForeignKey("hub.id"), nullable=True, init=False)
+    hub: Mapped[Hub | None] = relationship(Hub, back_populates="devices", default=None)
+
+    __table_args__ = (Index("ix_kind_name", kind, name, unique=True),)
+
+
+class Switch(Device):
     """A device that can be turned on or off."""
 
     state: Mapped[SwitchState] = mapped_column(default=SwitchState.Off)
 
 
-class Dimmer(DeviceHardware, Device):
+class Dimmer(Device):
     """A device that provides variable lighting."""
 
     value: Mapped[int] = mapped_column(default=0)
@@ -166,16 +183,17 @@ class Dimmer(DeviceHardware, Device):
     display_value: Mapped[float] = column_property(value / scale)
 
 
-Dimmer.__table__.append_constraint(
+DimmerTable = typing.cast(sqlalchemy.Table, Dimmer.__table__)
+DimmerTable.append_constraint(
     CheckConstraint("min_value <= max_value", name="range_is_valid"),
 )
-Dimmer.__table__.append_constraint(
+DimmerTable.append_constraint(
     CheckConstraint("min_value <= value AND value <= max_value", name="value_in_range"),
 )
-Dimmer.__table__.append_constraint(CheckConstraint("scale != 0", name="scale_not_zero"))
+DimmerTable.append_constraint(CheckConstraint("scale != 0", name="scale_not_zero"))
 
 
-class Lock(DeviceHardware, Device):
+class Lock(Device):
     """A device that can be open/shut and has PIN codes for entry."""
 
     state: Mapped[LockState] = mapped_column(default=LockState.Unlocked)
@@ -208,7 +226,7 @@ class LockPin(BaseModel):
     )
 
 
-class Thermostat(DeviceHardware, Device):
+class Thermostat(Device):
     """A device for controlling heat/cool levels in a dwelling."""
 
     mode: Mapped[ThermoMode] = mapped_column(default=ThermoMode.Off)
@@ -239,10 +257,7 @@ class Thermostat(DeviceHardware, Device):
     )
 
 
-Thermostat.__table__.append_constraint(
+ThermoTable = typing.cast(sqlalchemy.Table, Thermostat.__table__)
+ThermoTable.append_constraint(
     CheckConstraint("low_centi_c <= high_centi_c", name="high_temp_above_low")
 )
-
-
-DeviceT = TypeVar("DeviceT", Switch, Dimmer, Lock, Thermostat, Device)
-_T = TypeVar("_T", Dwelling, Hub, Switch, Dimmer, Lock, Thermostat, Device)

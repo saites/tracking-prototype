@@ -40,14 +40,14 @@ def main(command_file: typing.TextIO, output_file: typing.TextIO) -> None:
 
 
 # Create helper dicts to associate command strings to item types.
-_devices: dict[str, type[dm.Device]] = {
+_devices: dict[str, type[ds.ItemTA]] = {
     "SWITCH": dm.Switch,
     "DIMMER": dm.Dimmer,
     "LOCK": dm.Lock,
     "THERMOSTAT": dm.Thermostat,
 }
-_kinds = _devices | {"DWELLING": dm.Dwelling, "HUB": dm.Hub}
-_all_kinds = _kinds | {"DEVICE": dm.Device}
+_dev_or_place = _devices | {"DWELLING": dm.Dwelling, "HUB": dm.Hub}
+_all_kinds = _dev_or_place | {"DEVICE": dm.Device}
 _plural_kinds = {f"{k}S": v for k, v in _all_kinds.items() if k != "SWITCH"} | {
     "SWITCHES": dm.Switch
 }
@@ -73,9 +73,9 @@ def process_command(session: Session, command: str, output_file: typing.TextIO) 
             ds.uninstall_hub(session, hub_name)
 
         case ["PAIR", kind, device_name, "WITH", hub_name] if (cls := _devices.get(kind)):
-            ds.pair_device(session, cls, device_name, hub_name)
+            ds.pair_device(session, cls, device_name, hub_name)  # type: ignore
         case ["UNPAIR", kind, device_name] if (cls := _devices.get(kind)):
-            ds.unpair_device(session, cls, device_name)
+            ds.unpair_device(session, cls, device_name)  # type: ignore
 
         case ["NEW", "SWITCH", name]:
             ds.new_switch(session, name)
@@ -111,21 +111,21 @@ def process_command(session: Session, command: str, output_file: typing.TextIO) 
         case ["SET", "THERMOSTAT", name, "CURRENT", "TO", current]:
             ds.set_thermo_current_temp(session, name, int(current))
 
-        case ["RENAME", kind, old_name, "TO", new_name] if (cls := _kinds.get(kind)):
-            ds.rename(session, cls, old_name, new_name)
-        case ["DELETE", kind, name] if (cls := _kinds.get(kind)):
-            ds.delete(session, cls, name)
+        case ["RENAME", kind, old_name, "TO", new_name] if (devp := _dev_or_place.get(kind)):
+            ds.rename(session, devp, old_name, new_name)  # type: ignore
+        case ["DELETE", kind, name] if (devp := _dev_or_place.get(kind)):
+            ds.delete(session, devp, name)  # type: ignore
 
         case ["SHOW", kind, name] if (cls := _all_kinds.get(kind)):
             output_file.write(f"--{kind} '{name}'--\n")
-            show(select(cls).where(cls.name == name), session, output_file, depth=1)
+            show(select(cls).where(cls.name == name), session, output_file, depth=1)  # type: ignore
         case ["DETAIL", kind, name] if (cls := _all_kinds.get(kind)):
             output_file.write(f"--{kind} '{name}'--\n")
-            show(select(cls).where(cls.name == name), session, output_file)
+            show(select(cls).where(cls.name == name), session, output_file)  # type: ignore
         case [("DETAIL" | "LIST") as specificity, kind] if (cls := _plural_kinds.get(kind)):
             output_file.write(f"--All {kind}--\n")
-            q = select(cls.name) if specificity == "LIST" else select(cls)
-            show(q, session, output_file)
+            q = select(cls.name) if specificity == "LIST" else select(cls)  # type: ignore
+            show(q, session, output_file)  # pyright: ignore
 
         case _:
             raise errors.TrackerError("unknown command or bad syntax")

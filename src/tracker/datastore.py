@@ -1,10 +1,9 @@
-import re
 import uuid
-from typing import TypeVar
+from typing import Protocol, TypeVar
 
 import sqlalchemy.exc
 from sqlalchemy import Engine, StaticPool, create_engine, engine, event, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import MappedColumn, Session
 
 from . import errors
 from .basemodel import BaseModel, CentiCelcius
@@ -59,10 +58,14 @@ def get_sqlite_engine(db_name: str | None = None) -> Engine:
     return db_engine
 
 
-_T = TypeVar("_T", Dwelling, Hub, Switch, Dimmer, Lock, Thermostat, Device)
+_T = TypeVar("_T", covariant=True)
+ItemT = TypeVar(
+    "ItemT", Dwelling, Hub, Switch, Dimmer, Lock, Thermostat, Device, covariant=True
+)
+ItemTA = Dwelling | Hub | Switch | Dimmer | Lock | Thermostat | Device
 
 
-def get_by_name(session: Session, kind: type[_T], name: str, operation: str) -> _T:
+def get_by_name(session: Session, kind: type[ItemT], name: str, operation: str) -> ItemT:
     """Find an item by name."""
 
     try:
@@ -71,13 +74,13 @@ def get_by_name(session: Session, kind: type[_T], name: str, operation: str) -> 
         raise errors.NoResultError(kind.__tablename__, name, operation)
 
 
-def rename(session: Session, kind: type[_T], old_name: str, new_name: str) -> None:
+def rename(session: Session, kind: type[ItemT], old_name: str, new_name: str) -> None:
     """Rename an item."""
 
     get_by_name(session, kind, old_name, "rename").name = new_name
 
 
-def delete(session: Session, kind: type[_T], name: str) -> None:
+def delete(session: Session, kind: type[ItemT], name: str) -> None:
     """Delete an item."""
 
     item = get_by_name(session, kind, name, "delete")
@@ -241,6 +244,8 @@ def _change_thermo_state(thermo: Thermostat) -> None:
         return
 
     # TODO: hysteresis
+    # Of course, in reality, this would be directed by the device itself.
+    # We would just query the state (or ideally, be notified of it).
     if thermo.current_centi_c > thermo.high_centi_c and thermo.mode in (
         ThermoMode.Cool,
         ThermoMode.HeatCool,

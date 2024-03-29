@@ -3,6 +3,7 @@ import sys
 import typing
 from pprint import pprint
 
+import sqlalchemy.exc
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
@@ -30,6 +31,9 @@ def main(command_file: typing.TextIO, output_file: typing.TextIO) -> None:
             try:
                 process_command(session, line, output_file)
                 session.commit()
+            except sqlalchemy.exc.IntegrityError as err:
+                logger.error(f"Command on line {line_num} failed: {err.orig}\n\t> {line}\n")
+                session.rollback()
             except (errors.TrackerError, ValueError) as err:
                 logger.error(f"Command on line {line_num} failed: {err}\n\t> {line}\n")
                 session.rollback()

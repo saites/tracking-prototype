@@ -1,14 +1,29 @@
+"""
+This module defines the types used by this service and the relationships among them.
+"""
+
 from __future__ import annotations
 
+import re
 import typing
 from datetime import datetime
 from enum import Enum
-from typing import Any, Protocol
+from typing import Annotated, Any, Iterable, Protocol, Self
 
 import sqlalchemy
-from sqlalchemy import CheckConstraint, ForeignKey, Identity, Index, Integer, case
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    Identity,
+    Index,
+    Integer,
+    MetaData,
+    Text,
+    case,
+)
 from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
 from sqlalchemy.orm import (
+    DeclarativeBase,
     Mapped,
     MappedAsDataclass,
     column_property,
@@ -17,7 +32,50 @@ from sqlalchemy.orm import (
     relationship,
 )
 
-from .basemodel import AutoID, BaseModel, CentiCelcius, DbID, VersionStr
+DbID = Annotated[int, mapped_column()]
+"""A database Identifier."""
+
+VersionStr = Annotated[str, mapped_column(Text)]
+"""A version string."""
+
+CentiCelcius = Annotated[int, mapped_column(Integer)]
+"""1/100 of a degree Celcius."""
+
+
+class BaseModel(MappedAsDataclass, DeclarativeBase):
+    """Base class used to map between Python classes and database tables."""
+
+    metadata = MetaData(
+        naming_convention={
+            "ix": "ix_%(column_0_label)s",
+            "uq": "uq_%(table_name)s_%(column_0_N_name)s",
+            "ck": "ck_%(table_name)s_%(constraint_name)s",
+            "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+            "pk": "pk_%(table_name)s",
+        }
+    )
+
+    @declared_attr.directive
+    def __tablename__(cls: Self) -> str:
+        """Use snake_case names for tables."""
+        return "_".join(p.lower() for p in _split_camel(cls.__name__))
+
+
+def _split_camel(s: str) -> Iterable[str]:
+    """Yield substrings at transitions from non-uppercase ASCII to uppercase ASCII."""
+
+    prev = 0
+    for m in re.finditer(r"[^A-Z][A-Z]", s):
+        e = m.span()[1] - 1
+        yield s[prev:e]
+        prev = e
+    yield s[prev:]
+
+
+class AutoID(MappedAsDataclass):
+    """Adds a primary key column named 'id' to a table when mixed-in."""
+
+    id: Mapped[DbID] = mapped_column(Identity(always=True), primary_key=True, init=False)
 
 
 class DeviceKind(Enum):
@@ -137,8 +195,9 @@ class DeviceID:
         if cls.__name__ == "Device":
             return mapped_column(Integer, Identity(always=True), primary_key=True, init=False)
         else:
-            return mapped_column(Integer, ForeignKey("device.id"), primary_key=True, init=False)
-
+            return mapped_column(
+                Integer, ForeignKey("device.id"), primary_key=True, init=False
+            )
 
     @declared_attr.directive
     def __mapper_args__(cls: NamedClass) -> dict[str, Any]:
@@ -156,10 +215,12 @@ class DeviceID:
 
 class Device(DeviceID, Hardware, BaseModel):
     """A Device is an IoT entity which reports reading, has state, and/or can be controlled."""
-    
+
     kind: Mapped[DeviceKind] = mapped_column(init=False)
     name: Mapped[str] = mapped_column()
-    hub_id: Mapped[DbID | None] = mapped_column(ForeignKey("hub.id"), nullable=True, init=False)
+    hub_id: Mapped[DbID | None] = mapped_column(
+        ForeignKey("hub.id"), nullable=True, init=False
+    )
     hub: Mapped[Hub | None] = relationship(Hub, back_populates="devices", default=None)
 
     __table_args__ = (Index("ix_kind_name", kind, name, unique=True),)

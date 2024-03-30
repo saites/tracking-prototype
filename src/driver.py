@@ -1,3 +1,15 @@
+"""
+This driver script shows an example of using this project. 
+
+When run as a script (`python driver.py`), it executes the `main` function below,
+which reads from `stdin` and writes output to `stdout` and logs to `stderr`.
+It processes each line as a command according to a simple DSL,
+wherein each valid command will call to one of the library functions.
+Lines with invalid syntax or that otherwise result in errors log their error message. 
+
+See the README for more details on the DSL, or have a look at the `process_command` function.
+"""
+
 import logging
 import sys
 import typing

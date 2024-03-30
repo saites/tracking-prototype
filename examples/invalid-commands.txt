@@ -1,3 +1,6 @@
+# This file contains many invalid commands.
+# It's useful for confirming the driver script doesn't crash when meeting them.
+
 NEW
 NEW SWITCH
 NEW SWITCH switch

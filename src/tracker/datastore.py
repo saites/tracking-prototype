@@ -1,13 +1,18 @@
+"""
+This module defines functions to manipulate data this project manages. 
+"""
+
 import uuid
-from typing import Protocol, TypeVar
+from typing import TypeVar
 
 import sqlalchemy.exc
 from sqlalchemy import Engine, StaticPool, create_engine, engine, event, select
-from sqlalchemy.orm import MappedColumn, Session
+from sqlalchemy.orm import Session
 
 from . import errors
-from .basemodel import BaseModel, CentiCelcius
 from .datamodel import (
+    BaseModel,
+    CentiCelcius,
     Device,
     Dimmer,
     Dwelling,
@@ -58,7 +63,6 @@ def get_sqlite_engine(db_name: str | None = None) -> Engine:
     return db_engine
 
 
-_T = TypeVar("_T", covariant=True)
 ItemT = TypeVar(
     "ItemT", Dwelling, Hub, Switch, Dimmer, Lock, Thermostat, Device, covariant=True
 )

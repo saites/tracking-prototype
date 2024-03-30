@@ -47,7 +47,7 @@
 #     SET LOCK name TO UNLOCKED USING pin_code
 #  
 #   Thermostats have operating states, a display format (C or F), 
-#   and low/high set-points (always integers in 1/100th of a degree Celcius):
+#   and low/high set-points (always integers in 1/100th of a degree Celsius):
 #     NEW THERMOSTAT name WITH DISPLAY IN { C | F }
 #     MODIFY THERMOSTAT name WITH DISPLAY IN { C | F }
 #     SET THERMOSTAT name TEMPERATURE TO low_temp TO high_temp

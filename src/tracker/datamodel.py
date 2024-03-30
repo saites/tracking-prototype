@@ -38,8 +38,8 @@ DbID = Annotated[int, mapped_column()]
 VersionStr = Annotated[str, mapped_column(Text)]
 """A version string."""
 
-CentiCelcius = Annotated[int, mapped_column(Integer)]
-"""1/100 of a degree Celcius."""
+CentiCelsius = Annotated[int, mapped_column(Integer)]
+"""1/100 of a degree Celsius."""
 
 
 class BaseModel(MappedAsDataclass, DeclarativeBase):
@@ -110,7 +110,7 @@ class LockState(Enum):
 
 
 class ThermoDisplay(Enum):
-    """Thermostat diplay format."""
+    """Thermostat display format."""
 
     Celcius = "c"
     Fahrenheit = "f"
@@ -292,10 +292,10 @@ class Thermostat(Device):
     mode: Mapped[ThermoMode] = mapped_column(default=ThermoMode.Off)
     state: Mapped[ThermoOperation] = mapped_column(default=ThermoOperation.Off)
     display: Mapped[ThermoDisplay] = mapped_column(default=ThermoDisplay.Celcius)
-    low_centi_c: Mapped[CentiCelcius] = mapped_column(default=2220)
-    high_centi_c: Mapped[CentiCelcius] = mapped_column(default=2220)
-    current_centi_c: Mapped[CentiCelcius] = mapped_column(default=2220)
-    target_centi_c: Mapped[CentiCelcius] = mapped_column(default=2220)
+    low_centi_c: Mapped[CentiCelsius] = mapped_column(default=2220)
+    high_centi_c: Mapped[CentiCelsius] = mapped_column(default=2220)
+    current_centi_c: Mapped[CentiCelsius] = mapped_column(default=2220)
+    target_centi_c: Mapped[CentiCelsius] = mapped_column(default=2220)
 
     display_low: Mapped[float] = column_property(
         case(

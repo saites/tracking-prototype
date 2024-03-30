@@ -1,11 +1,12 @@
 """
 This module defines functions to manipulate data this project manages. 
 """
+
 from __future__ import annotations
 
 import contextlib
 import uuid
-from typing import Iterator, TypeAlias, TypeVar, overload, reveal_type
+from typing import Iterator, TypeAlias, TypeVar
 
 import sqlalchemy.exc
 from sqlalchemy import Engine, StaticPool, create_engine, engine, event, select
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session
 from . import errors
 from .datamodel import (
     BaseModel,
-    CentiCelcius,
+    CentiCelsius,
     Device,
     Dimmer,
     Dwelling,
@@ -73,13 +74,13 @@ class DataStore:
     def __init__(self, engine: Engine | None = None) -> None:
         if engine is None:
             engine = get_sqlite_engine()
-        self.engine = engine 
+        self.engine = engine
 
     @contextlib.contextmanager
-    def begin(self) -> Iterator[DataSession]:
+    def session(self) -> Iterator[DataSession]:
         """Get a DataSession for multiple transactions."""
 
-        with Session(self.engine) as session: 
+        with Session(self.engine) as session:
             yield DataSession(session)
 
 
@@ -87,33 +88,41 @@ class DataSession:
     """Provides a context for individual transactions."""
 
     def __init__(self, session: Session) -> None:
-        self.session = session 
-    
-    @contextlib.contextmanager
-    def begin(self) -> Iterator[DataTransaction]:
-        """Get a DataTransaction for a single transaction."""
+        self.session = session
 
-        with self.session.begin():
+    @contextlib.contextmanager
+    def transaction(self) -> Iterator[DataTransaction]:
+        self.session.begin()
+        try:
             yield DataTransaction(self.session)
+            self.session.commit()
+        except sqlalchemy.exc.IntegrityError as err:
+            self.session.rollback()
+            raise errors.TrackerError(str(err.orig)) from err
+        except:
+            self.session.rollback()
+            raise
 
 
 class DataTransaction:
     """A DataTransaction execute operations within a single data transaction."""
 
-    def __init__(self, session: Session) -> None: 
+    def __init__(self, session: Session) -> None:
         self.session = session
 
     def get_all(self, kind: type[PlaceOrDeviceT]) -> Iterator[PlaceOrDeviceT]:
         """Get all items of a certain kind."""
 
         return self.session.scalars(select(kind))
-    
+
     def get_all_names(self, kind: type[PlaceOrDeviceT]) -> Iterator[str]:
         """Get the names of all items of a certain kind."""
 
         return self.session.scalars(select(kind.name))
 
-    def get_by_name(self, kind: type[PlaceOrDeviceT], name: str, operation: str) -> PlaceOrDeviceT:
+    def get_by_name(
+        self, kind: type[PlaceOrDeviceT], name: str, operation: str
+    ) -> PlaceOrDeviceT:
         """Find an item by name."""
 
         try:
@@ -148,7 +157,9 @@ class DataTransaction:
         dwelling = self.get_by_name(Dwelling, dwelling_name, "install hub")
 
         if hub.dwelling is not None and hub.dwelling_id != dwelling.id:
-            raise errors.PairedError("Hub", hub.name, "Dwelling", hub.dwelling.name, "install hub")
+            raise errors.PairedError(
+                "Hub", hub.name, "Dwelling", hub.dwelling.name, "install hub"
+            )
 
         hub.dwelling = dwelling
 
@@ -190,26 +201,24 @@ class DataTransaction:
 
         self.session.add(Dwelling(name))
 
-
     def new_hub(self, name: str) -> None:
         """Create a new `Hub`."""
 
         self.session.add(Hub(name))
-
 
     def new_switch(self, name: str) -> None:
         """Create a new `Switch`."""
 
         self.session.add(Switch(name))
 
-
     def new_dimmer(self, name: str, min_value: int, max_value: int, scale: int) -> None:
         """Create a new `Dimmer`."""
 
         self.session.add(
-            Dimmer(name, min_value=min_value, max_value=max_value, scale=scale, value=min_value)
+            Dimmer(
+                name, min_value=min_value, max_value=max_value, scale=scale, value=min_value
+            )
         )
-
 
     def new_lock(self, name: str, pin: str) -> None:
         """Create a new `Lock`."""
@@ -221,7 +230,6 @@ class DataTransaction:
 
         self.session.add(Thermostat(name, display=display))
 
-
     def update_dimmer(self, name: str, min_value: int, max_value: int, scale: int) -> None:
         """Change the range or scale of an existing `Dimmer`."""
 
@@ -231,25 +239,21 @@ class DataTransaction:
         dimmer.max_value = max_value
         dimmer.scale = scale
 
-
     def update_thermostat(self, name: str, display: ThermoDisplay) -> None:
         """Change the display mode for a `Thermostat`."""
 
         self.get_by_name(Thermostat, name, "update mode").display = display
-
 
     def set_dwelling_occupancy(self, name: str, state: OccupancyState) -> None:
         """Change the occupancy state of a `Dwelling`."""
 
         self.get_by_name(Dwelling, name, "set occupancy").occupancy = state
 
-
     def set_switch_state(self, name: str, state: SwitchState) -> None:
         """Set a `Switch`'s state."""
 
         switch = self.get_by_name(Switch, name, "set state")
         switch.state = state
-
 
     def set_dimmer_value(self, name: str, value: int) -> None:
         """Set a `Dimmer`'s value."""
@@ -281,7 +285,6 @@ class DataTransaction:
         else:
             thermo.state = ThermoOperation.Off
 
-
     def set_thermo_mode(self, name: str, mode: ThermoMode) -> None:
         """Set a `Thermostat`'s operation mode."""
 
@@ -289,8 +292,7 @@ class DataTransaction:
         thermo.mode = mode
         self._change_thermo_state(thermo)
 
-
-    def set_thermo_current_temp(self, name: str, value: CentiCelcius) -> None:
+    def set_thermo_current_temp(self, name: str, value: CentiCelsius) -> None:
         """Set a `Thermostat`'s current temperature.
 
         In principle, this would be the device updating the system about the current value,
@@ -301,8 +303,7 @@ class DataTransaction:
         thermo.current_centi_c = value
         self._change_thermo_state(thermo)
 
-
-    def set_thermo_set_points(self, name: str, low: CentiCelcius, high: CentiCelcius) -> None:
+    def set_thermo_set_points(self, name: str, low: CentiCelsius, high: CentiCelsius) -> None:
         """Set a `Thermostat`'s low and high set points."""
 
         thermo = self.get_by_name(Thermostat, name, "set temperature")
@@ -310,12 +311,10 @@ class DataTransaction:
         thermo.high_centi_c = high
         self._change_thermo_state(thermo)
 
-
     def lock_door(self, name: str) -> None:
         """Set a `Lock` to locked."""
 
         self.get_by_name(Lock, name, "lock").state = LockState.Locked
-
 
     def unlock_door(self, name: str, pin: str) -> None:
         """Attempt to unlock a `Lock`, if the `pin` is correct ."""
@@ -326,14 +325,12 @@ class DataTransaction:
 
         lock.state = LockState.Unlocked
 
-
     def add_lock_pin(self, name: str, pin: str) -> None:
         """Add a new `pin` to a `Lock`. Does nothing if it is already present."""
 
         lock = self.get_by_name(Lock, name, "lock")
         if pin not in lock.pin_codes:
             lock.pin_codes.append(pin)
-
 
     def remove_lock_pin(self, name: str, pin: str) -> None:
         """Remove a `pin` from a `Lock`."""

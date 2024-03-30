@@ -31,18 +31,20 @@ def main(command_file: typing.TextIO, output_file: typing.TextIO) -> None:
     """
 
     store = ds.DataStore()
-    with store.begin() as session: 
+    with store.session() as session:
         for line_num, line in enumerate(map(lambda line: line.strip(), command_file)):
             process_one(session, line_num, line, output_file)
 
 
-def process_one(session: ds.DataSession, line_num: int, line: str, output_file: typing.TextIO) -> None:
+def process_one(
+    session: ds.DataSession, line_num: int, line: str, output_file: typing.TextIO
+) -> None:
     """Process a single line. This is split out to reduce nesting."""
-    with session.begin() as transaction:
-        try:
+    try:
+        with session.transaction() as transaction:
             process_command(transaction, line, output_file)
-        except (errors.TrackerError, ValueError) as err:
-            logger.error(f"Command on line {line_num} failed: {err}\n\t> {line}\n")
+    except (errors.TrackerError, ValueError) as err:
+        logger.error(f"Command on line {line_num} failed: {err}\n\t> {line}\n")
 
 
 # These helpers associate command strings to item types.
@@ -52,9 +54,13 @@ _devices: dict[str, type[dm.Device]] = {
     "LOCK": dm.Lock,
     "THERMOSTAT": dm.Thermostat,
 }
-_dev_or_place = typing.cast(dict[str, type[ds.PlaceOrDevice]], _devices | {"DWELLING": dm.Dwelling, "HUB": dm.Hub})
+_dev_or_place = typing.cast(
+    dict[str, type[ds.PlaceOrDevice]], _devices | {"DWELLING": dm.Dwelling, "HUB": dm.Hub}
+)
 _all_kinds = _dev_or_place | {"DEVICE": dm.Device}
-_plural_kinds = { f"{k}S": v for k, v in _all_kinds.items() if k != "SWITCH" } | { "SWITCHES": dm.Switch }
+_plural_kinds = {f"{k}S": v for k, v in _all_kinds.items() if k != "SWITCH"} | {
+    "SWITCHES": dm.Switch
+}
 
 
 def process_command(dt: ds.DataTransaction, command: str, output_file: typing.TextIO) -> None:
@@ -76,8 +82,10 @@ def process_command(dt: ds.DataTransaction, command: str, output_file: typing.Te
         case ["UNINSTALL", hub_name]:
             dt.uninstall_hub(hub_name)
 
-        case ["PAIR", dev_kind, device_name, "WITH", hub_name] if (dcls := _devices.get(dev_kind)):
-            dt.pair_device(dcls, device_name, hub_name) 
+        case ["PAIR", dev_kind, device_name, "WITH", hub_name] if (
+            dcls := _devices.get(dev_kind)
+        ):
+            dt.pair_device(dcls, device_name, hub_name)
         case ["UNPAIR", dev_kind, device_name] if (dcls := _devices.get(dev_kind)):
             dt.unpair_device(dcls, device_name)
 
@@ -114,7 +122,7 @@ def process_command(dt: ds.DataTransaction, command: str, output_file: typing.Te
             dt.set_thermo_set_points(name, int(low), int(high))
         case ["SET", "THERMOSTAT", name, "CURRENT", "TO", current]:
             dt.set_thermo_current_temp(name, int(current))
-        
+
         case ["RENAME", kind, old_name, "TO", new_name] if (devp := _dev_or_place.get(kind)):
             dt.rename(devp, old_name, new_name)
         case ["DELETE", kind, name] if (devp := _dev_or_place.get(kind)):
@@ -137,7 +145,9 @@ def process_command(dt: ds.DataTransaction, command: str, output_file: typing.Te
             raise errors.TrackerError("unknown command or bad syntax")
 
 
-def show(items: typing.Iterable[typing.Any], output_file: typing.TextIO, depth: int = 2) -> None:
+def show(
+    items: typing.Iterable[typing.Any], output_file: typing.TextIO, depth: int = 2
+) -> None:
     """Pretty-print information selected items to `output_file`."""
 
     for d in items:

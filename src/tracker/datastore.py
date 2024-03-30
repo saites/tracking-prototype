@@ -91,7 +91,7 @@ class DataSession:
     but is done to hide the implementation from the driver script that calls into this.
     In a more realistic practice, incoming operations would generate their own session
     and inject it into handlers that interact with the datamodel classes.
-    Doing it that way reduces the temptation to interact with mapped classes outside a session, 
+    Doing it that way reduces the temptation to interact with mapped classes outside a session,
     which would implicitly begin a new transaction context (which should then be committed).
     """
 

@@ -112,7 +112,7 @@ class LockState(Enum):
 class ThermoDisplay(Enum):
     """Thermostat display format."""
 
-    Celcius = "c"
+    Celsius = "c"
     Fahrenheit = "f"
 
 
@@ -291,7 +291,7 @@ class Thermostat(Device):
 
     mode: Mapped[ThermoMode] = mapped_column(default=ThermoMode.Off)
     state: Mapped[ThermoOperation] = mapped_column(default=ThermoOperation.Off)
-    display: Mapped[ThermoDisplay] = mapped_column(default=ThermoDisplay.Celcius)
+    display: Mapped[ThermoDisplay] = mapped_column(default=ThermoDisplay.Celsius)
     low_centi_c: Mapped[CentiCelsius] = mapped_column(default=2220)
     high_centi_c: Mapped[CentiCelsius] = mapped_column(default=2220)
     current_centi_c: Mapped[CentiCelsius] = mapped_column(default=2220)
@@ -299,19 +299,19 @@ class Thermostat(Device):
 
     display_low: Mapped[float] = column_property(
         case(
-            (display == ThermoDisplay.Celcius.name, low_centi_c / 100.0),
+            (display == ThermoDisplay.Celsius.name, low_centi_c / 100.0),
             else_=(9 * low_centi_c / 500.0 + 32.0),  # C to F: (temp/100.0) * (9/5) + 32.0
         )
     )
     display_high: Mapped[float] = column_property(
         case(
-            (display == ThermoDisplay.Celcius.name, high_centi_c / 100.0),
+            (display == ThermoDisplay.Celsius.name, high_centi_c / 100.0),
             else_=(9 * high_centi_c / 500.0 + 32.0),
         )
     )
     display_current: Mapped[float] = column_property(
         case(
-            (display == ThermoDisplay.Celcius.name, current_centi_c / 100.0),
+            (display == ThermoDisplay.Celsius.name, current_centi_c / 100.0),
             else_=(9 * current_centi_c / 500.0 + 32.0),
         )
     )

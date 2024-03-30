@@ -196,39 +196,49 @@ class DataTransaction:
 
         device.hub = None
 
-    def new_dwelling(self, name: str) -> None:
+    def new_dwelling(self, name: str) -> Dwelling:
         """Create a new `Dwelling`."""
 
-        self.session.add(Dwelling(name))
+        dwelling = Dwelling(name)
+        self.session.add(dwelling)
+        return dwelling
 
-    def new_hub(self, name: str) -> None:
+    def new_hub(self, name: str) -> Hub:
         """Create a new `Hub`."""
 
-        self.session.add(Hub(name))
+        hub = Hub(name)
+        self.session.add(hub)
+        return hub
 
-    def new_switch(self, name: str) -> None:
+    def new_switch(self, name: str) -> Switch:
         """Create a new `Switch`."""
 
-        self.session.add(Switch(name))
+        switch = Switch(name)
+        self.session.add(switch)
+        return switch
 
-    def new_dimmer(self, name: str, min_value: int, max_value: int, scale: int) -> None:
+    def new_dimmer(self, name: str, min_value: int, max_value: int, scale: int) -> Dimmer:
         """Create a new `Dimmer`."""
 
-        self.session.add(
-            Dimmer(
-                name, min_value=min_value, max_value=max_value, scale=scale, value=min_value
-            )
+        dimmer = Dimmer(
+            name, min_value=min_value, max_value=max_value, scale=scale, value=min_value
         )
+        self.session.add(dimmer)
+        return dimmer
 
-    def new_lock(self, name: str, pin: str) -> None:
+    def new_lock(self, name: str, pin: str) -> Lock:
         """Create a new `Lock`."""
 
-        self.session.add(Lock(name, pin_codes=[pin]))
+        lock = Lock(name, pin_codes=[pin])
+        self.session.add(lock)
+        return lock
 
-    def new_thermostat(self, name: str, display: ThermoDisplay) -> None:
+    def new_thermostat(self, name: str, display: ThermoDisplay) -> Thermostat:
         """Create a new `Thermostat`."""
 
-        self.session.add(Thermostat(name, display=display))
+        thermostat = Thermostat(name, display=display)
+        self.session.add(thermostat)
+        return thermostat
 
     def update_dimmer(self, name: str, min_value: int, max_value: int, scale: int) -> None:
         """Change the range or scale of an existing `Dimmer`."""

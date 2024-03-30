@@ -185,7 +185,7 @@ class NamedClass(Protocol):
     def __name__(self) -> str: ...
 
 
-class DeviceID:
+class DeviceID(MappedAsDataclass):
     """Generates ID column to relate tables with device-type-specific properties
     to the "device" table, which holds properties common to all devices.
     """

@@ -1,9 +1,11 @@
 """
 This module defines functions to manipulate data this project manages. 
 """
+from __future__ import annotations
 
+import contextlib
 import uuid
-from typing import TypeVar
+from typing import Iterator, TypeAlias, TypeVar, overload, reveal_type
 
 import sqlalchemy.exc
 from sqlalchemy import Engine, StaticPool, create_engine, engine, event, select
@@ -32,8 +34,6 @@ from .datamodel import (
 def get_sqlite_engine(db_name: str | None = None) -> Engine:
     """Return an in-memory SQLite database engine, configured with sensible defaults."""
 
-    # Use an in-memory database, potentially shared among multiple threads.
-    # This requires a recent version of SQLite, but this project targets Python 3.11 anyway.
     db_url = engine.URL.create(
         drivername="sqlite",
         database=db_name or f"file:{uuid.uuid4().int:x}",
@@ -63,266 +63,283 @@ def get_sqlite_engine(db_name: str | None = None) -> Engine:
     return db_engine
 
 
-ItemT = TypeVar(
-    "ItemT", Dwelling, Hub, Switch, Dimmer, Lock, Thermostat, Device, covariant=True
-)
-ItemTA = Dwelling | Hub | Switch | Dimmer | Lock | Thermostat | Device
+PlaceOrDevice: TypeAlias = Dwelling | Hub | Device
+PlaceOrDeviceT = TypeVar("PlaceOrDeviceT", bound=PlaceOrDevice)
 
 
-def get_by_name(session: Session, kind: type[ItemT], name: str, operation: str) -> ItemT:
-    """Find an item by name."""
+class DataStore:
+    """A DataStore provides access to DataSessions for DataTransactions."""
 
-    try:
-        return session.scalars(select(kind).where(kind.name == name)).one()
-    except sqlalchemy.exc.NoResultFound:
-        raise errors.NoResultError(kind.__tablename__, name, operation)
+    def __init__(self, engine: Engine | None = None) -> None:
+        if engine is None:
+            engine = get_sqlite_engine()
+        self.engine = engine 
 
+    @contextlib.contextmanager
+    def begin(self) -> Iterator[DataSession]:
+        """Get a DataSession for multiple transactions."""
 
-def rename(session: Session, kind: type[ItemT], old_name: str, new_name: str) -> None:
-    """Rename an item."""
-
-    get_by_name(session, kind, old_name, "rename").name = new_name
-
-
-def delete(session: Session, kind: type[ItemT], name: str) -> None:
-    """Delete an item."""
-
-    item = get_by_name(session, kind, name, "delete")
-    if isinstance(item, Device) and item.hub is not None:
-        raise errors.PairedError(item.kind.name, name, "Hub", item.hub.name, "delete")
-    elif isinstance(item, Hub) and item.dwelling is not None:
-        raise errors.PairedError("Hub", name, "Dwelling", item.dwelling.name, "delete")
-    elif isinstance(item, Hub) and len(item.devices) > 0:
-        raise errors.HasDependenciesError("Hub", name, "delete")
-    elif isinstance(item, Dwelling) and len(item.hubs) > 0:
-        raise errors.HasDependenciesError("Dwelling", name, "delete")
-
-    session.delete(item)
+        with Session(self.engine) as session: 
+            yield DataSession(session)
 
 
-def install_hub(session: Session, hub_name: str, dwelling_name: str) -> None:
-    """Associate a `Hub` with a `Dwelling`."""
+class DataSession:
+    """Provides a context for individual transactions."""
 
-    hub = get_by_name(session, Hub, hub_name, "install hub")
-    dwelling = get_by_name(session, Dwelling, dwelling_name, "install hub")
+    def __init__(self, session: Session) -> None:
+        self.session = session 
+    
+    @contextlib.contextmanager
+    def begin(self) -> Iterator[DataTransaction]:
+        """Get a DataTransaction for a single transaction."""
 
-    if hub.dwelling is not None and hub.dwelling_id != dwelling.id:
-        raise errors.PairedError("Hub", hub.name, "Dwelling", hub.dwelling.name, "install hub")
-
-    hub.dwelling = dwelling
-
-
-def uninstall_hub(session: Session, hub_name: str) -> None:
-    """Disassociate a `Hub` from its `Dwelling`."""
-
-    hub = get_by_name(session, Hub, hub_name, "uninstall hub")
-
-    if hub.dwelling is None:
-        raise errors.UnpairedError("Hub", hub.name, "Dwelling", "uninstall hub")
-
-    hub.dwelling = None
+        with self.session.begin():
+            yield DataTransaction(self.session)
 
 
-def pair_device(session: Session, kind: type[Device], device_name: str, hub_name: str) -> None:
-    """Associate a `Device` with a `Hub`."""
+class DataTransaction:
+    """A DataTransaction execute operations within a single data transaction."""
 
-    device = get_by_name(session, kind, device_name, "pair device")
-    hub = get_by_name(session, Hub, hub_name, "pair device")
+    def __init__(self, session: Session) -> None: 
+        self.session = session
 
-    if device.hub is not None and device.hub_id != hub.id:
-        raise errors.PairedError(
-            device.kind.name, device.name, "Hub", device.hub.name, "pair device"
+    def get_all(self, kind: type[PlaceOrDeviceT]) -> Iterator[PlaceOrDeviceT]:
+        """Get all items of a certain kind."""
+
+        return self.session.scalars(select(kind))
+    
+    def get_all_names(self, kind: type[PlaceOrDeviceT]) -> Iterator[str]:
+        """Get the names of all items of a certain kind."""
+
+        return self.session.scalars(select(kind.name))
+
+    def get_by_name(self, kind: type[PlaceOrDeviceT], name: str, operation: str) -> PlaceOrDeviceT:
+        """Find an item by name."""
+
+        try:
+            return self.session.scalars(select(kind).where(kind.name == name)).one()
+        except sqlalchemy.exc.NoResultFound:
+            raise errors.NoResultError(kind.__tablename__, name, operation)
+
+    def rename(self, kind: type[PlaceOrDevice], old_name: str, new_name: str) -> None:
+        """Rename an item."""
+
+        self.get_by_name(kind, old_name, "rename").name = new_name
+
+    def delete(self, kind: type[PlaceOrDevice], name: str) -> None:
+        """Delete an item."""
+
+        item = self.get_by_name(kind, name, "delete")
+        if isinstance(item, Device) and item.hub is not None:
+            raise errors.PairedError(item.kind.name, name, "Hub", item.hub.name, "delete")
+        elif isinstance(item, Hub) and item.dwelling is not None:
+            raise errors.PairedError("Hub", name, "Dwelling", item.dwelling.name, "delete")
+        elif isinstance(item, Hub) and len(item.devices) > 0:
+            raise errors.HasDependenciesError("Hub", name, "delete")
+        elif isinstance(item, Dwelling) and len(item.hubs) > 0:
+            raise errors.HasDependenciesError("Dwelling", name, "delete")
+
+        self.session.delete(item)
+
+    def install_hub(self, hub_name: str, dwelling_name: str) -> None:
+        """Associate a `Hub` with a `Dwelling`."""
+
+        hub = self.get_by_name(Hub, hub_name, "install hub")
+        dwelling = self.get_by_name(Dwelling, dwelling_name, "install hub")
+
+        if hub.dwelling is not None and hub.dwelling_id != dwelling.id:
+            raise errors.PairedError("Hub", hub.name, "Dwelling", hub.dwelling.name, "install hub")
+
+        hub.dwelling = dwelling
+
+    def uninstall_hub(self, hub_name: str) -> None:
+        """Disassociate a `Hub` from its `Dwelling`."""
+
+        hub = self.get_by_name(Hub, hub_name, "uninstall hub")
+
+        if hub.dwelling is None:
+            raise errors.UnpairedError("Hub", hub.name, "Dwelling", "uninstall hub")
+
+        hub.dwelling = None
+
+    def pair_device(self, kind: type[Device], device_name: str, hub_name: str) -> None:
+        """Associate a `Device` with a `Hub`."""
+
+        device = self.get_by_name(kind, device_name, "pair device")
+        hub = self.get_by_name(Hub, hub_name, "pair device")
+
+        if device.hub is not None and device.hub_id != hub.id:
+            raise errors.PairedError(
+                device.kind.name, device.name, "Hub", device.hub.name, "pair device"
+            )
+
+        device.hub = hub
+
+    def unpair_device(self, kind: type[Device], device_name: str) -> None:
+        """Disassociate a `Device` from its `Hub`."""
+
+        device = self.get_by_name(kind, device_name, "unpair device")
+
+        if device.hub is None:
+            raise errors.UnpairedError(device.kind.name, device.name, "Hub", "unpair device")
+
+        device.hub = None
+
+    def new_dwelling(self, name: str) -> None:
+        """Create a new `Dwelling`."""
+
+        self.session.add(Dwelling(name))
+
+
+    def new_hub(self, name: str) -> None:
+        """Create a new `Hub`."""
+
+        self.session.add(Hub(name))
+
+
+    def new_switch(self, name: str) -> None:
+        """Create a new `Switch`."""
+
+        self.session.add(Switch(name))
+
+
+    def new_dimmer(self, name: str, min_value: int, max_value: int, scale: int) -> None:
+        """Create a new `Dimmer`."""
+
+        self.session.add(
+            Dimmer(name, min_value=min_value, max_value=max_value, scale=scale, value=min_value)
         )
 
-    device.hub = hub
 
+    def new_lock(self, name: str, pin: str) -> None:
+        """Create a new `Lock`."""
 
-def unpair_device(session: Session, kind: type[Device], device_name: str) -> None:
-    """Disassociate a `Device` from its `Hub`."""
+        self.session.add(Lock(name, pin_codes=[pin]))
 
-    device = get_by_name(session, kind, device_name, "unpair device")
+    def new_thermostat(self, name: str, display: ThermoDisplay) -> None:
+        """Create a new `Thermostat`."""
 
-    if device.hub is None:
-        raise errors.UnpairedError(device.kind.name, device.name, "Hub", "unpair device")
+        self.session.add(Thermostat(name, display=display))
 
-    device.hub = None
 
+    def update_dimmer(self, name: str, min_value: int, max_value: int, scale: int) -> None:
+        """Change the range or scale of an existing `Dimmer`."""
 
-def delete_device(session: Session, device: Device) -> None:
-    """Delete a `Device`."""
+        dimmer = self.get_by_name(Dimmer, name, "update range")
+        dimmer.value = min_value
+        dimmer.min_value = min_value
+        dimmer.max_value = max_value
+        dimmer.scale = scale
 
-    if device.hub is not None:
-        raise errors.PairedError(
-            device.kind.name, device.name, "Hub", device.hub.name, "delete device"
-        )
 
-    session.delete(device)
+    def update_thermostat(self, name: str, display: ThermoDisplay) -> None:
+        """Change the display mode for a `Thermostat`."""
 
+        self.get_by_name(Thermostat, name, "update mode").display = display
 
-def new_dwelling(session: Session, name: str) -> None:
-    """Create a new `Dwelling`."""
 
-    session.add(Dwelling(name))
+    def set_dwelling_occupancy(self, name: str, state: OccupancyState) -> None:
+        """Change the occupancy state of a `Dwelling`."""
 
+        self.get_by_name(Dwelling, name, "set occupancy").occupancy = state
 
-def new_hub(session: Session, name: str) -> None:
-    """Create a new `Hub`."""
 
-    session.add(Hub(name))
+    def set_switch_state(self, name: str, state: SwitchState) -> None:
+        """Set a `Switch`'s state."""
 
+        switch = self.get_by_name(Switch, name, "set state")
+        switch.state = state
 
-def new_switch(session: Session, name: str) -> None:
-    """Create a new `Switch`."""
 
-    session.add(Switch(name))
+    def set_dimmer_value(self, name: str, value: int) -> None:
+        """Set a `Dimmer`'s value."""
 
+        dimmer = self.get_by_name(Dimmer, name, "set")
+        if not (dimmer.min_value <= value <= dimmer.max_value):
+            raise errors.OutOfRangeError(
+                "Dimmer", name, value, dimmer.min_value, dimmer.max_value, "set"
+            )
 
-def new_dimmer(
-    session: Session, name: str, min_value: int, max_value: int, scale: int
-) -> None:
-    """Create a new `Dimmer`."""
+        dimmer.value = value
 
-    session.add(
-        Dimmer(name, min_value=min_value, max_value=max_value, scale=scale, value=min_value)
-    )
+    def _change_thermo_state(self, thermo: Thermostat) -> None:
+        """Check and, if necessary, change the `Thermostat`'s mode to reach the target temperature."""
 
+        if thermo.mode is ThermoMode.Off:
+            return
 
-def new_lock(session: Session, name: str, pin: str) -> None:
-    """Create a new `Lock`."""
+        if thermo.current_centi_c > thermo.high_centi_c and thermo.mode in (
+            ThermoMode.Cool,
+            ThermoMode.HeatCool,
+        ):
+            thermo.state = ThermoOperation.Cooling
+        elif thermo.current_centi_c < thermo.low_centi_c and thermo.mode in (
+            ThermoMode.Heat,
+            ThermoMode.HeatCool,
+        ):
+            thermo.state = ThermoOperation.Heating
+        else:
+            thermo.state = ThermoOperation.Off
 
-    session.add(Lock(name, pin_codes=[pin]))
 
+    def set_thermo_mode(self, name: str, mode: ThermoMode) -> None:
+        """Set a `Thermostat`'s operation mode."""
 
-def new_thermostat(session: Session, name: str, display: ThermoDisplay) -> None:
-    """Create a new `Thermostat`."""
+        thermo = self.get_by_name(Thermostat, name, "set mode")
+        thermo.mode = mode
+        self._change_thermo_state(thermo)
 
-    session.add(Thermostat(name, display=display))
 
+    def set_thermo_current_temp(self, name: str, value: CentiCelcius) -> None:
+        """Set a `Thermostat`'s current temperature.
 
-def update_dimmer(
-    session: Session, name: str, min_value: int, max_value: int, scale: int
-) -> None:
-    """Change the range or scale of an existing `Dimmer`."""
+        In principle, this would be the device updating the system about the current value,
+        or our system polling the device and updating our state on some cadence.
+        """
 
-    dimmer = get_by_name(session, Dimmer, name, "update range")
-    dimmer.value = min_value
-    dimmer.min_value = min_value
-    dimmer.max_value = max_value
-    dimmer.scale = scale
+        thermo = self.get_by_name(Thermostat, name, "set current temperature")
+        thermo.current_centi_c = value
+        self._change_thermo_state(thermo)
 
 
-def update_thermostat(session: Session, name: str, display: ThermoDisplay) -> None:
-    """Change the display mode for a `Thermostat`."""
+    def set_thermo_set_points(self, name: str, low: CentiCelcius, high: CentiCelcius) -> None:
+        """Set a `Thermostat`'s low and high set points."""
 
-    get_by_name(session, Thermostat, name, "update mode").display = display
+        thermo = self.get_by_name(Thermostat, name, "set temperature")
+        thermo.low_centi_c = low
+        thermo.high_centi_c = high
+        self._change_thermo_state(thermo)
 
 
-def set_dwelling_occupancy(session: Session, name: str, state: OccupancyState) -> None:
-    """Change the occupancy state of a `Dwelling`."""
+    def lock_door(self, name: str) -> None:
+        """Set a `Lock` to locked."""
 
-    get_by_name(session, Dwelling, name, "set occupancy").occupancy = state
+        self.get_by_name(Lock, name, "lock").state = LockState.Locked
 
 
-def set_switch_state(session: Session, name: str, state: SwitchState) -> None:
-    """Set a `Switch`'s state."""
+    def unlock_door(self, name: str, pin: str) -> None:
+        """Attempt to unlock a `Lock`, if the `pin` is correct ."""
 
-    switch = get_by_name(session, Switch, name, "set state")
-    switch.state = state
+        lock = self.get_by_name(Lock, name, "lock")
+        if pin not in lock.pin_codes:
+            raise errors.InvalidPinError()
 
+        lock.state = LockState.Unlocked
 
-def set_dimmer_value(session: Session, name: str, value: int) -> None:
-    """Set a `Dimmer`'s value."""
 
-    dimmer = get_by_name(session, Dimmer, name, "set")
-    if not (dimmer.min_value <= value <= dimmer.max_value):
-        raise errors.OutOfRangeError(
-            "Dimmer", name, value, dimmer.min_value, dimmer.max_value, "set"
-        )
+    def add_lock_pin(self, name: str, pin: str) -> None:
+        """Add a new `pin` to a `Lock`. Does nothing if it is already present."""
 
-    dimmer.value = value
+        lock = self.get_by_name(Lock, name, "lock")
+        if pin not in lock.pin_codes:
+            lock.pin_codes.append(pin)
 
 
-def _change_thermo_state(thermo: Thermostat) -> None:
-    """Check and, if necessary, change the `Thermostat`'s mode to reach the target temperature."""
-    if thermo.mode is ThermoMode.Off:
-        return
+    def remove_lock_pin(self, name: str, pin: str) -> None:
+        """Remove a `pin` from a `Lock`."""
 
-    # TODO: hysteresis
-    # Of course, in reality, this would be directed by the device itself.
-    # We would just query the state (or ideally, be notified of it).
-    if thermo.current_centi_c > thermo.high_centi_c and thermo.mode in (
-        ThermoMode.Cool,
-        ThermoMode.HeatCool,
-    ):
-        thermo.state = ThermoOperation.Cooling
-    elif thermo.current_centi_c < thermo.low_centi_c and thermo.mode in (
-        ThermoMode.Heat,
-        ThermoMode.HeatCool,
-    ):
-        thermo.state = ThermoOperation.Heating
-    else:
-        thermo.state = ThermoOperation.Off
+        lock = self.get_by_name(Lock, name, "lock")
+        if pin not in lock.pin_codes:
+            raise errors.InvalidPinError()
 
-
-def set_thermo_mode(session: Session, name: str, mode: ThermoMode) -> None:
-    """Set a `Thermostat`'s operation mode."""
-
-    thermo = get_by_name(session, Thermostat, name, "set mode")
-    thermo.mode = mode
-    _change_thermo_state(thermo)
-
-
-def set_thermo_current_temp(session: Session, name: str, value: CentiCelcius) -> None:
-    """Set a `Thermostat`'s current temperature.
-
-    In principle, this would be the device updating the system about the current value.
-    """
-
-    thermo = get_by_name(session, Thermostat, name, "set current temperature")
-    thermo.current_centi_c = value
-    _change_thermo_state(thermo)
-
-
-def set_thermo_set_points(
-    session: Session, name: str, low: CentiCelcius, high: CentiCelcius
-) -> None:
-    """Set a `Thermostat`'s low and high set points."""
-
-    thermo = get_by_name(session, Thermostat, name, "set temperature")
-    thermo.low_centi_c = low
-    thermo.high_centi_c = high
-    _change_thermo_state(thermo)
-
-
-def lock_door(session: Session, name: str) -> None:
-    """Set a `Lock` to locked."""
-
-    get_by_name(session, Lock, name, "lock").state = LockState.Locked
-
-
-def unlock_door(session: Session, name: str, pin: str) -> None:
-    """Attempt to unlock a `Lock`, if the `pin` is correct ."""
-
-    lock = get_by_name(session, Lock, name, "lock")
-    if pin not in lock.pin_codes:
-        raise errors.InvalidPinError()
-
-    lock.state = LockState.Unlocked
-
-
-def add_lock_pin(session: Session, name: str, pin: str) -> None:
-    """Add a new `pin` to a `Lock`. Does nothing if it is already present."""
-
-    lock = get_by_name(session, Lock, name, "lock")
-    if pin not in lock.pin_codes:
-        lock.pin_codes.append(pin)
-
-
-def remove_lock_pin(session: Session, name: str, pin: str) -> None:
-    """Remove a `pin` from a `Lock`."""
-
-    lock = get_by_name(session, Lock, name, "lock")
-    if pin not in lock.pin_codes:
-        raise errors.InvalidPinError()
-
-    lock.pin_codes.remove(pin)
+        lock.pin_codes.remove(pin)

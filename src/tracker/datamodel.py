@@ -221,7 +221,9 @@ class Device(DeviceID, Hardware, BaseModel):
     hub_id: Mapped[DbID | None] = mapped_column(
         ForeignKey("hub.id"), nullable=True, init=False
     )
-    hub: Mapped[Hub | None] = relationship(Hub, back_populates="devices", default=None)
+    hub: Mapped[Hub | None] = relationship(
+        Hub, back_populates="devices", default=None, kw_only=True
+    )
 
     __table_args__ = (Index("ix_kind_name", kind, name, unique=True),)
 

@@ -36,6 +36,7 @@ dev = [
 
 [tool.pytest.ini_options]
 addopts = [
+  "-v",
   "--import-mode=importlib",
   "--maxfail=1",
   # Report (f)ailed, (E)rrors, and (s)kipped.

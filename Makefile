@@ -4,9 +4,13 @@
 #
 # See the README for more information.
 
-.PHONY: setup examples interactive show-deps \
-		format test type-check \
-		docker-build docker-examples docker-interactive docker-clean
+SHELL := /bin/bash
+MAKEFLAGS += --warn-undefined-variables --no-builtin-rules
+.PHONY: default \
+		setup examples interactive test type-check \
+		format show-deps \
+		docker-build docker-examples docker-interactive docker-test docker-type-check \
+		docker-clean
 
 PYTHON ?= python3
 DOCKER ?= docker
@@ -16,6 +20,8 @@ PYTEST ?= pytest
 
 PYTEST_OPTS ?=
 IMAGE ?= localhost/tracker
+
+default: docker-test
 
 # Dependencies.
 DIRS := src tests
@@ -31,14 +37,19 @@ show-deps:
 ##############################################################################
 
 setup:
-	$(PYTHON) pip install -e .[test,dev]
+	pip install -e .[test,dev]
 
-examples:
-	$(PYTHON) src/driver.py < examples/example-commands.txt
-	$(PYTHON) src/driver.py < examples/invalid-commands.txt
+EXAMPLES := $(wildcard examples/*.txt)
+.PHONY: $(EXAMPLES)
+examples: $(EXAMPLES)
+runner = $(PYTHON) src/driver.py
+$(EXAMPLES):
+	@printf "$(green)>>>> Running example '%q' <<<<$(clear)\n" "$(@F)"
+	$(runner) < "$@"
+	@printf "$(green)>>>> Done with example '%q' <<<<\n$(clear)" "$(@F)"
 
 interactive:
-	$(PYTHON) src/driver.py
+	$(runner)
 
 test:
 	$(PYTEST) $(PYTEST_OPTS)
@@ -55,21 +66,24 @@ format:
 ##############################################################################
 
 docker-build: .imagebuilt
-.imagebuilt: $(PYDEPS) Dockerfile
+.imagebuilt: $(PYDEPS) Dockerfile .dockerignore
 	$(DOCKER) build -t $(IMAGE) .
 	touch $@
 
-docker-examples: .imagebuilt
-	$(DOCKER) run --rm -i $(IMAGE) < examples/example-commands.txt
-	$(DOCKER) run --rm -i $(IMAGE) < examples/invalid-commands.txt
+docker-%: runner = $(DOCKER) run --rm -i $(IMAGE)
+docker-examples docker-interactive: docker-% : docker-build %
 
-docker-interactive: .imagebuilt
-	$(DOCKER) run --rm -it $(IMAGE)
+docker-test: docker-build
+	$(DOCKER) run --rm -it $(IMAGE) $(PYTEST) $(PYTEST_OPTS)
 
-docker-test: .imagebuilt
-	$(DOCKER) run --rm -it $(IMAGE) pytest $(PYTEST_OPTS)
+docker-type-check: docker-build
+	$(DOCKER) run --rm -it $(IMAGE) $(MYPY) src
 
-# Remove the sentinel file.
+.IGNORE: docker-clean
 docker-clean:
-	-rm .imagebuilt
+	docker image rm $(IMAGE)
+	rm .imagebuilt
+
+green = $(shell tput setaf 2)
+clear = $(shell tput sgr0)
 

@@ -6,10 +6,11 @@ The code in this repository implements a basic IoT tracking system.
 ## Quick Start
 
 If you have `git`, `docker`, and `make` installed,
-this short script shows how to get started quickly.
+this short script shows how to get started quickly:
 
 ```shell
-git clone $this_repo_url
+git clone https://github.com/saites/tracking-prototype.git tracking-prototype
+cd tracking-prototype
 
 # Create image and run tests.
 make docker-test
@@ -131,7 +132,7 @@ The code is organized into the following modules:
 
 The project description lends itself well to a relational database design,
 and since an in-memory solution was desired, I chose `SQLite` as a backbone;
-It is fast, included with (typical) Python distributions,
+it is fast, included with (typical) Python distributions,
 and capable of maintaining the necessary constraints and relational integrity.
 Using `SQLAlchemy`, I was able to describe these relationships declaratively
 while mapping them to corresponding Python objects.
@@ -139,20 +140,17 @@ The code includes relevant comments, but here's the gist of `datamodel.py`:
 
 - `Dwelling`s have basic state information
   and attributes to access "installed" `Hub`s
-  and those `Hub`'s `Device`s
+  and those `Hub`'s `Device`s.
 - `Hub`s and `Device`s have a common set of `Hardware` properties,
   such as hardware and firmware version numbers
-  and when the state was last updated[^not-implemented].
-  Although these are modeled via a shared mixin,
-  they are are mapped to different tables and therefore different columns.
-- `Hub`s include an optional reference to a `Dwelling`
-  and attributes to access that `Dwelling` and the `Hub`s associated `Device`s.
+  and when the state was last updated.
+- `Hub`s include attributes to access its associated `Dwelling` and `Device`s.
 - `Device`s are represented in the Python code via a thin class hierarchy
   and in the database using joined table inheritance.
   This enables code like `isinstance(Device, some_switch)` to do the right thing,
-  while ensure new device classes won't require major database changes
-  nor require a single table to have many columns full of `NULL` values.
-  - The base `Device` class includes a mapping back to a `Hub`,
+  while ensuring new device classes won't require major database changes,
+  nor requiring a single table to have many columns full of `NULL` values.
+  - The base `Device` class includes a mapping back to its `Hub`,
     as well as the common `Hardware` properties described above.
     It also includes a discriminator column (`kind`) to map to specific `Device` classes.
   - `Switch`, `Dimmer`, etc. subclass the `Device` class
@@ -160,10 +158,10 @@ The code includes relevant comments, but here's the gist of `datamodel.py`:
     These are mapped to device-type-specific tables
     wherein the primary key is itself a foreign key reference
     to the underlying `Device` instance.
-  - The details of the Python-to-database mapping
-    are implemented automatically, keeping the class definitions clean.
+  - The details of the Python-to-database mapping are implemented automatically,
+    keeping the class definitions clean.
     A new device class can be added with a single new `enum` value
-    and a class that derives from `Device`, e.g.
+    and a class that derives from `Device`, e.g.:
     ```python
     class DeviceKind(Enum):
         # existing enums ...
@@ -172,11 +170,6 @@ The code includes relevant comments, but here's the gist of `datamodel.py`:
     class MyNewDevice(Device):
         some_state: Mapped[int]
     ```
-
-
-[^not-implemented]: As it's only a PoC,
-    the current version of the code does not
-    update the `updated_at` timestamp when modifying state.
 
 As I imagine the expected use-case to be some form of
 "process incoming messages by updating the data backend and dispatching to devices",
@@ -188,11 +181,11 @@ Internally, the library uses the session to find the appropriate targets
 and modify their states, potentially linking objects together if necessary.
 
 Contrast this to methods declared directly on the class,
-such as a `Switch.change_state(new_state)` method.
+such as a hypothetical `Switch.change_state(new_state)` method.
 While this is appealing to some extent, many methods have no such clear "owner"
 (should it be `dwelling.install(hub)` or `hub.install_into(dwelling)`?).
-Having such methods on the classes directly muddies transactional boundaries,
-encouraging passing around references to implicitly unstable state,
+Having these methods directly on the classes muddies the transactional boundaries,
+as it encourages passing around references to implicitly unstable state,
 with potential for more bugs down the line.
 
 Moreover, the project description implies at some point this information
@@ -206,12 +199,12 @@ more easily allowing separate development and compute resourcing if necessary.
 
 All this said, I wrapped the `SQLAlchemy` `Session` with a class of its own
 in order to hide its implementation details from the `driver.py` script.
-Note, however, that hiding the `Session` in this manner
-encourages leaking mapped objects, with the risk that calling code
+Note that hiding the `Session` in this manner
+also encourages leaking mapped objects, with the risk that calling code
 would use them outside of their framed transactional context.
-This is, however, someone unlikely in practice:
+This is, however, somewhat unlikely in practice:
 as with the `driver.py` code, the most likely use-case
-is to start a new transaction on each incoming command to be processed
+is to start a new transaction on each incoming command to be processed,
 and execute its operations within the transaction context.
 In that case, the primary risk comes from catching exceptions within the context,
 as in some cases, doing so may require an explicit `rollback` or `commit`,
@@ -219,3 +212,21 @@ which is currently abstracted by the `contextmanager` itself.
 In practice, though, the most likely place to run into this is unit tests,
 and typically when intentionally triggering an error.
 
+### Future Work
+
+As this is only a PoC, the current version of the code leaves out several things:
+
+- The `updated_at` timestamp is not actually updated when modifying state.
+- Though there are places for hardware and firmware details,
+  there isn't explicit library code to modify them.
+- When setting a `Device`'s state,
+  real code would use the `Device`'s hardware and firmware information
+  to determine the appropriate protocol to use to communicate with the device.
+  Likely, the `Device` table would need to add other properties for this purpose.
+  The current code simply updates its own view of the property.
+- Related to the above, `Device` updates should probably be enqueued
+  and reattempted on failure,
+  in which case the backend would store a `target_state`
+  alongside a `last_known_state`, likely with timestamps associated with both.
+- The PINs used to unlock a `Lock` should probably be associated with some sort of user account.
+- This codebase only includes a small number of tests to verify functionality.

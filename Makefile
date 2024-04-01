@@ -70,14 +70,16 @@ docker-build: .imagebuilt
 	$(DOCKER) build -t $(IMAGE) .
 	touch $@
 
-docker-%: runner = $(DOCKER) run --rm -i $(IMAGE)
-docker-examples docker-interactive: docker-% : docker-build %
+DOCKER_RUN_ARGS = --rm -i
+docker-%: runner = $(DOCKER) run $(DOCKER_RUN_ARGS) $(IMAGE)
+docker-interactive docker-test docker-type-check: DOCKER_RUN_ARGS += -t
+docker-interactive docker-examples: docker-%: docker-build %
 
 docker-test: docker-build
-	$(DOCKER) run --rm -it $(IMAGE) $(PYTEST) $(PYTEST_OPTS)
+	$(runner) $(PYTEST) $(PYTEST_OPTS)
 
 docker-type-check: docker-build
-	$(DOCKER) run --rm -it $(IMAGE) $(MYPY) src
+	$(runner) $(MYPY) src
 
 .IGNORE: docker-clean
 docker-clean:
